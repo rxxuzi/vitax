@@ -1,0 +1,62 @@
+# Rust
+target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+vitax.iml
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.pdb
+*.dSYM/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Coverage reports
+*.profraw
+*.profdata
+lcov.info
+coverage/
+
+# Backup files
+*.bak
+*.orig
+
+# Lock files (除了 Cargo.lock, 它对于应用程序是有用的)
+package-lock.json
+yarn.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local configuration
+config/local.toml
