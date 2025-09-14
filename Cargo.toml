@@ -1,0 +1,12 @@
+[package]
+name = "vitax"
+version = "0.1.0"
+edition = "2021"
+authors = ["rxxuzi"]
+description = "A safe directory analysis tool for preparing project overviews"
+license = "MIT"
+repository = "https://github.com/rxxuzi/vitax"
+keywords = ["cli", "directory", "analysis", "file", "tool"]
+categories = ["command-line-utilities"]
+
+[dependencies]
