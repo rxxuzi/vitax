@@ -50,8 +50,8 @@ coverage/
 # Backup files
 *.bak
 *.orig
+*.1
 
-# Lock files (除了 Cargo.lock, 它对于应用程序是有用的)
 package-lock.json
 yarn.lock
 npm-debug.log*
@@ -60,3 +60,4 @@ yarn-error.log*
 
 # Local configuration
 config/local.toml
+archive/

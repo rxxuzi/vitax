@@ -1,6 +1,6 @@
 [package]
 name = "vitax"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["rxxuzi"]
 description = "A safe directory analysis tool for preparing project overviews"
@@ -10,3 +10,5 @@ keywords = ["cli", "directory", "analysis", "file", "tool"]
 categories = ["command-line-utilities"]
 
 [dependencies]
+clap = { version = "4.0", features = ["derive"] }
+glob = "0.3"

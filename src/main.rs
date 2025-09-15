@@ -1,78 +1,77 @@
-// src/main.rs
 mod io;
 mod detector;
 mod validator;
+mod cli;
 
-use std::env;
 use std::process;
 use std::path::Path;
+use clap::Parser;
 use detector::{FileDetector, FileType};
 use validator::FileValidator;
+use cli::Args;
 
 fn main() {
-    // コマンドライン引数を取得
-    let args: Vec<String> = env::args().collect();
+    let args = Args::parse();
 
-    // 引数の数をチェック
-    if args.len() < 2 {
-        eprintln!("Usage: {} <path>", args[0]);
+    if let Err(e) = args.validate() {
+        eprintln!("vitax: fatal error: {}", e);
+        eprintln!("Usage: vitax <path> [paths...] [options]");
         process::exit(1);
     }
 
-    let path = &args[1];
+    for (index, path) in args.paths.iter().enumerate() {
+        if index > 0 {
+            println!("\n{}", "=".repeat(80));
+            println!();
+        }
+        process_single_path(path, &args);
+    }
+}
 
-    // 基準パスを正規化（絶対パスに変換）
+fn process_single_path(path: &str, args: &Args) {
     let base_path = match std::fs::canonicalize(path) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Error resolving path '{}': {}", path, e);
-            process::exit(1);
+            return;
         }
     };
 
-    // パスのタイプを確認
     match io::check_path_type(path) {
-        Ok(io::PathType::Directory) => {
-            process_directory(path, &base_path);
-        }
+        Ok(io::PathType::Directory) => process_directory(path, &base_path, args),
         Ok(io::PathType::File) => {
-            process_file(path, &base_path, true); // 最初のファイルなのでtrue
-        }
-        Ok(io::PathType::Other) => {
-            eprintln!("Unsupported path type: {}", path);
-            process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Error accessing path '{}': {}", path, e);
-            process::exit(1);
-        }
+            if !args.should_ignore(path) {
+                process_file(path, &base_path, true);
+            }
+        },
+        Ok(io::PathType::Other) => eprintln!("Unsupported path type: {}", path),
+        Err(e) => eprintln!("Error accessing path '{}': {}", path, e),
     }
 }
 
-fn process_directory(path: &str, base_path: &Path) {
-    // ディレクトリの場合、最初に===で表示
+fn process_directory(path: &str, base_path: &Path, args: &Args) {
     println!("================================================================================");
     println!("{}/", base_path.display());
     println!("================================================================================");
 
-    match io::walk_directory(path, Some(10)) {
+    match io::walk_directory(path, Some(args.max_depth)) {
         Ok(files) => {
             for file in files {
-                process_file(&file, base_path, false); // 子ファイルなのでfalse
+                if !args.should_ignore(&file) {
+                    process_file(&file, base_path, false);
+                }
             }
         }
-        Err(e) => {
-            eprintln!("Error walking directory '{}': {}", path, e);
-        }
+        Err(e) => eprintln!("Error walking directory '{}': {}", path, e),
     }
 }
 
 fn process_file(path: &str, base_path: &Path, is_root: bool) {
-    // バリデーション
     if let Err(e) = FileValidator::quick_validate(path) {
         eprintln!("Skipping file '{}': {}", path, e);
         return;
     }
+
     let display_path = if is_root {
         format!("================================================================================\n{}\n================================================================================", path)
     } else {
@@ -86,32 +85,26 @@ fn process_file(path: &str, base_path: &Path, is_root: bool) {
 
         let relative_path = match file_path.strip_prefix(base_path) {
             Ok(rel) => format!("./{}", rel.display()),
-            Err(_) => path.to_string(), // フォールバック
+            Err(_) => path.to_string(),
         };
 
         format!("--------------------------------------------------------------------------------\n{}\n--------------------------------------------------------------------------------", relative_path)
     };
 
-    // ファイルタイプ判定
     match FileDetector::detect_file_type(path) {
         Ok(FileType::Binary) => {
             println!("{}", display_path);
             println!("This is a binary file\n");
         }
         Ok(FileType::Text) => {
-            // テキストファイルの内容を表示
             match io::read_file_content(path) {
                 Ok(contents) => {
                     println!("{}", display_path);
                     println!("{}\n", contents);
                 }
-                Err(e) => {
-                    eprintln!("Error reading file '{}': {}", path, e);
-                }
+                Err(e) => eprintln!("Error reading file '{}': {}", path, e),
             }
         }
-        Err(e) => {
-            eprintln!("Error detecting file type '{}': {}", path, e);
-        }
+        Err(e) => eprintln!("Error detecting file type '{}': {}", path, e),
     }
 }

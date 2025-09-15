@@ -1,11 +1,17 @@
+//! File system operations and directory traversal utilities.
+
 use std::fs;
 use std::io;
 use std::path::Path;
 
+/// Reads the entire contents of a file into a string.
 pub fn read_file_content(filename: &str) -> Result<String, io::Error> {
     fs::read_to_string(filename)
 }
 
+/// Returns a sorted list of directory entries.
+///
+/// Directories are listed first, followed by files, both sorted alphabetically.
 pub fn read_directory_entries(dir_path: &str) -> Result<Vec<DirectoryEntry>, io::Error> {
     let mut entries = Vec::new();
     let dir = fs::read_dir(dir_path)?;
@@ -40,6 +46,7 @@ pub fn read_directory_entries(dir_path: &str) -> Result<Vec<DirectoryEntry>, io:
     Ok(entries)
 }
 
+/// Determines the type of path (file, directory, or other).
 pub fn check_path_type(path: &str) -> Result<PathType, io::Error> {
     let path_obj = Path::new(path);
 
@@ -56,6 +63,11 @@ pub fn check_path_type(path: &str) -> Result<PathType, io::Error> {
     }
 }
 
+/// Recursively walks a directory and returns all file paths.
+///
+/// # Arguments
+/// * `dir_path` - The directory to traverse
+/// * `max_depth` - Maximum recursion depth (None for unlimited)
 pub fn walk_directory(dir_path: &str, max_depth: Option<usize>) -> Result<Vec<String>, io::Error> {
     let mut files = Vec::new();
     walk_directory_recursive(dir_path, max_depth.unwrap_or(100), 0, &mut files)?;
