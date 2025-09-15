@@ -16,6 +16,8 @@ pub struct Config {
     pub max_depth: usize,
     /// File filter instance
     pub filter: FileFilter,
+    /// Verbose output mode
+    pub verbose: bool,
 }
 
 impl Config {
@@ -38,6 +40,7 @@ impl Config {
             paths: args.paths,
             max_depth: args.max_depth,
             filter,
+            verbose: args.verbose,
         })
     }
 

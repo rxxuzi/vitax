@@ -11,7 +11,7 @@ use std::process;
 use clap::Parser;
 use config::Config;
 use detector::{FileDetector, FileType};
-use validator::FileValidator;
+use validator::{FileValidator, ValidationError};
 
 fn main() {
     let args = cli::Args::parse();
@@ -25,10 +25,6 @@ fn main() {
             process::exit(1);
         }
     };
-
-    if config.has_filters() {
-        eprintln!("vitax: {}", config.describe_filters());
-    }
 
     for (index, path) in config.paths.iter().enumerate() {
         if index > 0 {
@@ -59,7 +55,7 @@ fn process_single_path(path: &str, config: &Config) {
         }
         Ok(io::PathType::File) => {
             if config.filter.should_process(path) {
-                process_file(path, &base_path, true);
+                process_file(path, &base_path, true, config);
             }
         }
         Ok(io::PathType::Other) => {
@@ -84,23 +80,10 @@ fn process_directory(path: &str, base_path: &Path, config: &Config) {
 
     match io::walk_directory(path, Some(config.max_depth)) {
         Ok(files) => {
-            let mut processed_count = 0;
-            let total_files = files.len();
-
             for file in files {
                 if config.filter.should_process(&file) {
-                    process_file(&file, base_path, false);
-                    processed_count += 1;
+                    process_file(&file, base_path, false, config);
                 }
-            }
-
-            if !config.filter.extensions().is_empty() {
-                eprintln!(
-                    "vitax: processed {} out of {} files (filtered by extensions: {})",
-                    processed_count,
-                    total_files,
-                    config.filter.extensions().join(", ")
-                );
             }
         }
         Err(e) => {
@@ -115,9 +98,13 @@ fn process_directory(path: &str, base_path: &Path, config: &Config) {
 /// * `path` - File path to process
 /// * `base_path` - Base path for relative path calculation
 /// * `is_root` - Whether this is a root file (affects display formatting)
-fn process_file(path: &str, base_path: &Path, is_root: bool) {
+/// * `config` - Application configuration
+fn process_file(path: &str, base_path: &Path, is_root: bool, config: &Config) {
+    // Validate file first
     if let Err(e) = FileValidator::quick_validate(path) {
-        eprintln!("Skipping file '{}': {}", path, e);
+        if config.verbose {
+            print_skipped_file(path, base_path, is_root, &e);
+        }
         return;
     }
 
@@ -135,14 +122,39 @@ fn process_file(path: &str, base_path: &Path, is_root: bool) {
                     println!("{}\n", contents);
                 }
                 Err(e) => {
-                    eprintln!("Error reading file '{}': {}", path, e);
+                    if config.verbose {
+                        print_read_error(path, base_path, is_root, &e);
+                    }
                 }
             }
         }
         Err(e) => {
-            eprintln!("Error detecting file type '{}': {}", path, e);
+            if config.verbose {
+                print_detection_error(path, base_path, is_root, &e);
+            }
         }
     }
+}
+
+/// Prints information about a skipped file in verbose mode.
+fn print_skipped_file(path: &str, base_path: &Path, is_root: bool, error: &ValidationError) {
+    let display_path = format_display_path(path, base_path, is_root);
+    println!("{}", display_path);
+    println!("SKIPPED: {}\n", error);
+}
+
+/// Prints information about a file read error in verbose mode.
+fn print_read_error(path: &str, base_path: &Path, is_root: bool, error: &std::io::Error) {
+    let display_path = format_display_path(path, base_path, is_root);
+    println!("{}", display_path);
+    println!("READ ERROR: {}\n", error);
+}
+
+/// Prints information about a file type detection error in verbose mode.
+fn print_detection_error(path: &str, base_path: &Path, is_root: bool, error: &std::io::Error) {
+    let display_path = format_display_path(path, base_path, is_root);
+    println!("{}", display_path);
+    println!("DETECTION ERROR: {}\n", error);
 }
 
 /// Formats the display path for a file.

@@ -26,4 +26,8 @@ pub struct Args {
     /// Show hidden files and directories
     #[arg(short = 'a', long = "all")]
     pub show_hidden: bool,
+
+    /// Verbose output (show skipped files and errors)
+    #[arg(short = 'v', long = "verbose")]
+    pub verbose: bool,
 }
