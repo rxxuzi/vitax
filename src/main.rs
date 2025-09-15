@@ -1,34 +1,50 @@
-mod io;
-mod detector;
-mod validator;
 mod cli;
+mod config;
+mod detector;
+mod filter;
+mod io;
+mod validator;
 
-use std::process;
 use std::path::Path;
+use std::process;
+
 use clap::Parser;
+use config::Config;
 use detector::{FileDetector, FileType};
 use validator::FileValidator;
-use cli::Args;
 
 fn main() {
-    let args = Args::parse();
+    let args = cli::Args::parse();
 
-    if let Err(e) = args.validate() {
-        eprintln!("vitax: fatal error: {}", e);
-        eprintln!("Usage: vitax <path> [paths...] [options]");
-        process::exit(1);
+    let config = match Config::from_args(args) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("vitax: fatal error: {}", e);
+            eprintln!("Usage: vitax <path> [paths...] [options]");
+            eprintln!("Try 'vitax --help' for more information.");
+            process::exit(1);
+        }
+    };
+
+    if config.has_filters() {
+        eprintln!("vitax: {}", config.describe_filters());
     }
 
-    for (index, path) in args.paths.iter().enumerate() {
+    for (index, path) in config.paths.iter().enumerate() {
         if index > 0 {
             println!("\n{}", "=".repeat(80));
             println!();
         }
-        process_single_path(path, &args);
+        process_single_path(path, &config);
     }
 }
 
-fn process_single_path(path: &str, args: &Args) {
+/// Processes a single path (file or directory).
+///
+/// # Arguments
+/// * `path` - The path to process
+/// * `config` - Application configuration
+fn process_single_path(path: &str, config: &Config) {
     let base_path = match std::fs::canonicalize(path) {
         Ok(p) => p,
         Err(e) => {
@@ -38,58 +54,74 @@ fn process_single_path(path: &str, args: &Args) {
     };
 
     match io::check_path_type(path) {
-        Ok(io::PathType::Directory) => process_directory(path, &base_path, args),
+        Ok(io::PathType::Directory) => {
+            process_directory(path, &base_path, config);
+        }
         Ok(io::PathType::File) => {
-            if !args.should_ignore(path) {
+            if config.filter.should_process(path) {
                 process_file(path, &base_path, true);
             }
-        },
-        Ok(io::PathType::Other) => eprintln!("Unsupported path type: {}", path),
-        Err(e) => eprintln!("Error accessing path '{}': {}", path, e),
+        }
+        Ok(io::PathType::Other) => {
+            eprintln!("Unsupported path type: {}", path);
+        }
+        Err(e) => {
+            eprintln!("Error accessing path '{}': {}", path, e);
+        }
     }
 }
 
-fn process_directory(path: &str, base_path: &Path, args: &Args) {
-    println!("================================================================================");
+/// Processes a directory recursively.
+///
+/// # Arguments
+/// * `path` - Directory path to process
+/// * `base_path` - Base path for relative path calculation
+/// * `config` - Application configuration
+fn process_directory(path: &str, base_path: &Path, config: &Config) {
+    println!("{}", "=".repeat(80));
     println!("{}/", base_path.display());
-    println!("================================================================================");
+    println!("{}", "=".repeat(80));
 
-    match io::walk_directory(path, Some(args.max_depth)) {
+    match io::walk_directory(path, Some(config.max_depth)) {
         Ok(files) => {
+            let mut processed_count = 0;
+            let total_files = files.len();
+
             for file in files {
-                if !args.should_ignore(&file) {
+                if config.filter.should_process(&file) {
                     process_file(&file, base_path, false);
+                    processed_count += 1;
                 }
             }
+
+            if !config.filter.extensions().is_empty() {
+                eprintln!(
+                    "vitax: processed {} out of {} files (filtered by extensions: {})",
+                    processed_count,
+                    total_files,
+                    config.filter.extensions().join(", ")
+                );
+            }
         }
-        Err(e) => eprintln!("Error walking directory '{}': {}", path, e),
+        Err(e) => {
+            eprintln!("Error walking directory '{}': {}", path, e);
+        }
     }
 }
 
+/// Processes a single file.
+///
+/// # Arguments
+/// * `path` - File path to process
+/// * `base_path` - Base path for relative path calculation
+/// * `is_root` - Whether this is a root file (affects display formatting)
 fn process_file(path: &str, base_path: &Path, is_root: bool) {
     if let Err(e) = FileValidator::quick_validate(path) {
         eprintln!("Skipping file '{}': {}", path, e);
         return;
     }
 
-    let display_path = if is_root {
-        format!("================================================================================\n{}\n================================================================================", path)
-    } else {
-        let file_path = match std::fs::canonicalize(path) {
-            Ok(p) => p,
-            Err(_) => {
-                eprintln!("Error resolving path: {}", path);
-                return;
-            }
-        };
-
-        let relative_path = match file_path.strip_prefix(base_path) {
-            Ok(rel) => format!("./{}", rel.display()),
-            Err(_) => path.to_string(),
-        };
-
-        format!("--------------------------------------------------------------------------------\n{}\n--------------------------------------------------------------------------------", relative_path)
-    };
+    let display_path = format_display_path(path, base_path, is_root);
 
     match FileDetector::detect_file_type(path) {
         Ok(FileType::Binary) => {
@@ -102,9 +134,35 @@ fn process_file(path: &str, base_path: &Path, is_root: bool) {
                     println!("{}", display_path);
                     println!("{}\n", contents);
                 }
-                Err(e) => eprintln!("Error reading file '{}': {}", path, e),
+                Err(e) => {
+                    eprintln!("Error reading file '{}': {}", path, e);
+                }
             }
         }
-        Err(e) => eprintln!("Error detecting file type '{}': {}", path, e),
+        Err(e) => {
+            eprintln!("Error detecting file type '{}': {}", path, e);
+        }
+    }
+}
+
+/// Formats the display path for a file.
+fn format_display_path(path: &str, base_path: &Path, is_root: bool) -> String {
+    let separator = if is_root { "=" } else { "-" };
+    let line = separator.repeat(80);
+
+    if is_root {
+        format!("{}\n{}\n{}", line, path, line)
+    } else {
+        let file_path = match std::fs::canonicalize(path) {
+            Ok(p) => p,
+            Err(_) => return format!("{}\n{}\n{}", line, path, line),
+        };
+
+        let relative_path = match file_path.strip_prefix(base_path) {
+            Ok(rel) => format!("./{}", rel.display()),
+            Err(_) => path.to_string(),
+        };
+
+        format!("{}\n{}\n{}", line, relative_path, line)
     }
 }
